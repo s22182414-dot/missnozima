@@ -6,7 +6,6 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { GoogleGenAI } from "@google/genai";
-import { transliterateWithAI } from '../services/geminiService';
 
 interface TextDisplayProps {
   text: string;
@@ -15,10 +14,7 @@ interface TextDisplayProps {
 
 export const TextDisplay: React.FC<TextDisplayProps> = ({ text, onReset }) => {
   const contentRef = useRef<HTMLDivElement>(null);
-  const [displayText, setDisplayText] = useState(text);
-  const [isTranslating, setIsTranslating] = useState(false);
-
-  useEffect(() => {
+  const [displayText, setDisplayText] = useState(text);  useEffect(() => {
     // Post-process text to convert raw exponents to Unicode superscripts for better readability
     // if they are not already in math blocks.
     let processed = text;
@@ -30,30 +26,6 @@ export const TextDisplay: React.FC<TextDisplayProps> = ({ text, onReset }) => {
   const handleCopy = () => {
     navigator.clipboard.writeText(displayText);
     alert("Matn nusxalandi!");
-  };
-
-  const handleToLatin = async () => {
-    setIsTranslating(true);
-    try {
-      const result = await transliterateWithAI(displayText, 'latin');
-      setDisplayText(result);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsTranslating(false);
-    }
-  };
-
-  const handleToCyrillic = async () => {
-    setIsTranslating(true);
-    try {
-      const result = await transliterateWithAI(displayText, 'cyrillic');
-      setDisplayText(result);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsTranslating(false);
-    }
   };
 
   const handleDownloadTxt = () => {
@@ -127,9 +99,20 @@ export const TextDisplay: React.FC<TextDisplayProps> = ({ text, onReset }) => {
     const header = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' 
             xmlns:w='urn:schemas-microsoft-com:office:word' 
+            xmlns:m='http://schemas.microsoft.com/office/2004/12/omml'
             xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
+        <title>OCR Natija</title>
+        <!--[if gte mso 9]>
+        <xml>
+          <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+          </w:WordDocument>
+        </xml>
+        <![endif]-->
         <style>
           body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12pt; }
           .katex-html { display: none; } /* Hide KaTeX HTML, let Word try to use MathML */
@@ -164,22 +147,6 @@ export const TextDisplay: React.FC<TextDisplayProps> = ({ text, onReset }) => {
           Natija
         </h3>
         <div className="flex gap-1 sm:gap-2">
-          <button 
-            onClick={handleToLatin}
-            disabled={isTranslating}
-            className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium rounded-lg transition-colors ${isTranslating ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-            title="Lotinga o'tkazish"
-          >
-            {isTranslating ? '...' : 'Lot'}
-          </button>
-          <button 
-            onClick={handleToCyrillic}
-            disabled={isTranslating}
-            className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-medium rounded-lg transition-colors ${isTranslating ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-            title="Kirillga o'tkazish"
-          >
-            {isTranslating ? '...' : 'Кир'}
-          </button>
           <button 
             onClick={handleCopy}
             className="p-1.5 sm:p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
