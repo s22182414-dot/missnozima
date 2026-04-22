@@ -14,22 +14,20 @@ declare global {
   }
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from './services/firebase';
 
-// Save result to MongoDB
+// Save result to Firebase
 const saveResultToDb = async (text: string, imagePreview: string) => {
   try {
-    await fetch(`${API_BASE}/api/results`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        imagePreview,
-        userAgent: navigator.userAgent
-      })
+    await addDoc(collection(db, "results"), {
+      text,
+      imagePreview,
+      userAgent: navigator.userAgent,
+      createdAt: new Date().toISOString()
     });
   } catch (err) {
-    console.warn('MongoDB ga saqlashda xatolik:', err);
+    console.warn('Firebase ga saqlashda xatolik:', err);
   }
 };
 
