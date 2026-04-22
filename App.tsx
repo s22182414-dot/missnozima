@@ -14,20 +14,34 @@ declare global {
   }
 }
 
-import { collection, addDoc } from 'firebase/firestore';
-import { db } from './services/firebase';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-// Save result to Firebase
+// Get or create a unique user ID
+const getUserId = (): string => {
+  let uid = localStorage.getItem('ocr-user-id');
+  if (!uid) {
+    uid = 'user_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('ocr-user-id', uid);
+  }
+  return uid;
+};
+
+// Save result to MongoDB
 const saveResultToDb = async (text: string, imagePreview: string) => {
   try {
-    await addDoc(collection(db, "results"), {
-      text,
-      imagePreview,
-      userAgent: navigator.userAgent,
-      createdAt: new Date().toISOString()
+    const userId = getUserId();
+    await fetch(`${API_BASE}/api/results`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        imagePreview,
+        userAgent: navigator.userAgent,
+        userId
+      })
     });
   } catch (err) {
-    console.warn('Firebase ga saqlashda xatolik:', err);
+    console.warn('MongoDB ga saqlashda xatolik:', err);
   }
 };
 
@@ -46,6 +60,13 @@ const useRoute = () => {
   return route;
 };
 
+interface HistoryResult {
+  _id: string;
+  text: string;
+  imagePreview: string;
+  createdAt: string;
+}
+
 const App: React.FC = () => {
   const route = useRoute();
   const [image, setImage] = useState<ImageFile | null>(null);
@@ -54,6 +75,9 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [history, setHistory] = useState<HistoryResult[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState<HistoryResult | null>(null);
 
   useEffect(() => {
     // Check if app is already installed (standalone mode)
@@ -78,7 +102,6 @@ const App: React.FC = () => {
     // Show modal after a short delay on first load if not already installed
     const timer = setTimeout(() => {
       const alreadyInstalled = localStorage.getItem('ocr-pro-installed') === 'true';
-
       if (!isStandalone && !alreadyInstalled) {
         setShowInstallModal(true);
       }
@@ -90,6 +113,22 @@ const App: React.FC = () => {
       clearTimeout(timer);
     };
   }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const userId = getUserId();
+      const res = await fetch(`${API_BASE}/api/results/user/${userId}`);
+      const data = await res.json();
+      if (data.success) setHistory(data.results);
+    } catch (err) {
+      console.warn('Tarixni yuklashda xatolik:', err);
+    }
+  };
+
+  const handleShowHistory = async () => {
+    setShowHistory(true);
+    await fetchHistory();
+  };
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
@@ -252,6 +291,19 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-2 sm:gap-4">
+          <button
+            onClick={handleShowHistory}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: 'none', border: '1px solid #e2e8f0',
+              borderRadius: '10px', padding: '6px 14px',
+              fontSize: '14px', color: '#4f46e5', cursor: 'pointer',
+              fontWeight: 600, transition: 'background 0.2s'
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Tarixim
+          </button>
         </div>
       </header>
 
@@ -362,6 +414,85 @@ const App: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* User History Modal */}
+      {showHistory && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: '24px', width: '100%', maxWidth: '600px',
+            maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.2)', overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>📋 Mening Tarixim</h2>
+              <button onClick={() => { setShowHistory(false); setSelectedHistory(null); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '22px' }}>✕</button>
+            </div>
+
+            {selectedHistory ? (
+              // Detail view
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+                <button onClick={() => setSelectedHistory(null)}
+                  style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer', marginBottom: '16px', color: '#4f46e5', fontWeight: 600, fontSize: '13px' }}>
+                  ← Ortga
+                </button>
+                {selectedHistory.imagePreview && (
+                  <img src={selectedHistory.imagePreview} alt="preview" style={{ width: '100%', borderRadius: '12px', marginBottom: '16px', objectFit: 'contain', maxHeight: '200px', background: '#f8fafc' }} />
+                )}
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+                  {selectedHistory.text}
+                </div>
+              </div>
+            ) : (
+              // List view
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {history.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '12px' }}>🗂️</div>
+                    <p style={{ fontSize: '15px' }}>Hozircha hech qanday tarix yo'q.</p>
+                    <p style={{ fontSize: '13px', marginTop: '6px' }}>Rasm yuklang va matn ajrating!</p>
+                  </div>
+                ) : (
+                  history.map((item) => (
+                    <div key={item._id}
+                      onClick={() => setSelectedHistory(item)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '12px',
+                        padding: '12px', borderRadius: '14px', marginBottom: '8px',
+                        cursor: 'pointer', border: '1px solid #e2e8f0',
+                        transition: 'background 0.15s', background: '#fafafa'
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#fafafa')}
+                    >
+                      {item.imagePreview ? (
+                        <img src={item.imagePreview} alt="thumb" style={{ width: '56px', height: '56px', borderRadius: '10px', objectFit: 'cover', background: '#e2e8f0', flexShrink: 0 }} />
+                      ) : (
+                        <div style={{ width: '56px', height: '56px', borderRadius: '10px', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', flexShrink: 0 }}>📄</div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '14px', color: '#334155', fontWeight: 500,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.text.slice(0, 80)}...
+                        </p>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                          {new Date(item.createdAt).toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -7,8 +7,8 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 
-import { collection, getDocs, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
-import { db } from '../services/firebase';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 // Render markdown + math exactly like TextDisplay does for the user
 const renderContentForWord = (text: string): string => {
   // Pre-process: convert raw exponents to Unicode superscripts outside math blocks
@@ -52,17 +52,22 @@ const AdminLogin: React.FC<{ onLogin: (token: string) => void }> = ({ onLogin })
     setError('');
 
     try {
-      const adminPass = import.meta.env.VITE_ADMIN_PASSWORD || 'admin123';
-      if (password === adminPass) {
-        const token = btoa(password + ':' + Date.now());
-        localStorage.setItem('admin_token', token);
-        onLogin(token);
+      const res = await fetch(`${API_BASE}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        localStorage.setItem('admin_token', data.token);
+        onLogin(data.token);
       } else {
-        setError("Noto'g'ri parol");
+        setError(data.message || "Noto'g'ri parol");
         setPassword('');
       }
     } catch (err) {
-      setError("Xatolik yuz berdi");
+      setError("Server bilan bog'lanib bo'lmadi. Server ishga tushganligini tekshiring.");
     } finally {
       setIsLoading(false);
     }
@@ -273,24 +278,21 @@ const AdminDashboard: React.FC<{ token: string; onLogout: () => void }> = ({ tok
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, "results"), orderBy("createdAt", "desc"));
-      const querySnapshot = await getDocs(q);
-      const dataResults: OcrResult[] = [];
-      querySnapshot.forEach((d) => {
-        dataResults.push({ _id: d.id, ...d.data() } as OcrResult);
-      });
+      const [resResults, resStats] = await Promise.all([
+        fetch(`${API_BASE}/api/results`, { headers }),
+        fetch(`${API_BASE}/api/stats`, { headers })
+      ]);
       
-      setResults(dataResults);
+      if (resResults.status === 401) {
+        onLogout();
+        return;
+      }
 
-      const toDateStr = (d: string | Date | undefined) => {
-         if (!d) return "";
-         return new Date(d).toISOString().split('T')[0];
-      };
+      const dataResults = await resResults.json();
+      const dataStats = await resStats.json();
       
-      const today = new Date().toISOString().split('T')[0];
-      const todayCount = dataResults.filter(r => toDateStr(r.createdAt) === today).length;
-      
-      setStats({ total: dataResults.length, today: todayCount });
+      if (dataResults.success) setResults(dataResults.results);
+      if (dataStats.success) setStats({ total: dataStats.total, today: dataStats.today });
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
@@ -300,11 +302,14 @@ const AdminDashboard: React.FC<{ token: string; onLogout: () => void }> = ({ tok
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, "results", id));
-      setResults(prev => prev.filter(r => r._id !== id));
-      setStats(prev => ({ ...prev, total: prev.total - 1 }));
-      setDeleteConfirm(null);
-      if (selectedResult?._id === id) setSelectedResult(null);
+      const res = await fetch(`${API_BASE}/api/results/${id}`, { method: 'DELETE', headers });
+      const data = await res.json();
+      if (data.success) {
+        setResults(prev => prev.filter(r => r._id !== id));
+        setStats(prev => ({ ...prev, total: prev.total - 1 }));
+        setDeleteConfirm(null);
+        if (selectedResult?._id === id) setSelectedResult(null);
+      }
     } catch (err) {
       console.error('Delete error:', err);
     }
